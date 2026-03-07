@@ -66,7 +66,7 @@ func (s *Storage) IsUserInquisitor(userID int) (bool, error) {
 }
 
 func (s *Storage) AddPollVote(pollID, voterID int, vote bool) error {
-	query := `INSERT INTO poll_votes (poll_id, voter_id, vote) VALUES ($1, $2, $3)`
+	query := `INSERT INTO polls_votes (poll_id, voter_id, vote) VALUES ($1, $2, $3)`
 	_, err := s.db.Exec(query, pollID, voterID, vote)
 	return err
 }
@@ -98,8 +98,8 @@ func (s *Storage) GetExpiredActivePolls() ([]models.Poll, error) {
 
 func (s *Storage) CountVotes(pollID int) (int, int, error) {
 	var votesFor, votesAgainst int
-	errFor := s.db.QueryRow(`SELECT COUNT(*) FROM poll_votes WHERE poll_id = $1 AND vote = true`, pollID).Scan(&votesFor)
-	errAgainst := s.db.QueryRow(`SELECT COUNT(*) FROM poll_votes WHERE poll_id = $1 AND vote = false`, pollID).Scan(&votesAgainst)
+	errFor := s.db.QueryRow(`SELECT COUNT(*) FROM polls_votes WHERE poll_id = $1 AND vote = true`, pollID).Scan(&votesFor)
+	errAgainst := s.db.QueryRow(`SELECT COUNT(*) FROM polls_votes WHERE poll_id = $1 AND vote = false`, pollID).Scan(&votesAgainst)
 
 	if errFor != nil || errAgainst != nil {
 		return 0, 0, errFor
@@ -113,8 +113,30 @@ func (s *Storage) UpdatePollStatus(pollID int, status string) error {
 }
 
 func (s *Storage) ExecuteKick(targetUserID int) error {
-	_, err := s.db.Exec(`UPDATE app_user SET is_active = false WHERE id = $1`, targetUserID)
-	return err
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+
+	_, err = tx.Exec(`DELETE FROM app_user_groups WHERE user_id = $1`, targetUserID)
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	_, err = tx.Exec(`DELETE FROM map_artifacts WHERE created_by = $1`, targetUserID)
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	_, err = tx.Exec(`DELETE FROM app_user WHERE id = $1`, targetUserID)
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	return tx.Commit()
 }
 
 func (s *Storage) ExecuteUpgrade(targetUserID int) error {
