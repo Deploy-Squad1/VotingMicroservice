@@ -2,12 +2,18 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 	"votingmicroservice/internal/middlewares"
 	"votingmicroservice/internal/storage"
+
+	"github.com/golang-migrate/migrate/v4"
+	"github.com/joho/godotenv"
 )
 
 type PollHandler struct {
@@ -16,6 +22,14 @@ type PollHandler struct {
 
 func NewPollHandler(store *storage.Storage) *PollHandler {
 	return &PollHandler{store: store}
+}
+
+type DatabaseMigrationHandler struct {
+	store *storage.Storage
+}
+
+func NewDatabaseMigrationHandler(store *storage.Storage) *DatabaseMigrationHandler {
+	return &DatabaseMigrationHandler{store: store}
 }
 
 func (h *PollHandler) CreateUpgradePoll(w http.ResponseWriter, r *http.Request) {
@@ -214,4 +228,54 @@ func (h *PollHandler) ProcessExpiredPolls(w http.ResponseWriter, r *http.Request
 		"message":         "Cron job executed successfully",
 		"polls_processed": len(polls),
 	})
+}
+
+func (h *PollHandler) GetAllActivePolls(w http.ResponseWriter, r *http.Request) {
+	polls, err := h.store.GetActivePolls()
+	if err != nil {
+		log.Printf("DB Error fetching active polls: %v\n", err)
+		http.Error(w, "Failed to fetch polls", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(polls)
+}
+
+func (h *DatabaseMigrationHandler) ApplyMigration(w http.ResponseWriter, r *http.Request) {
+	if err := godotenv.Load(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	dbUser := os.Getenv("DB_USER")
+	dbPassword := os.Getenv("DB_PASSWORD")
+	dbHost := os.Getenv("DB_HOST")
+	dbPort := os.Getenv("DB_PORT")
+	dbName := os.Getenv("DB_NAME")
+	connectionString := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable", dbUser, dbPassword, dbHost, dbPort, dbName)
+
+	m, err := migrate.New("file://migrations", connectionString)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	err = m.Down()
+	if err != nil {
+		if !errors.Is(err, migrate.ErrNoChange) {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+
+	err = m.Up()
+	if err != nil {
+		if !errors.Is(err, migrate.ErrNoChange) {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+
+	w.WriteHeader(http.StatusOK)
 }

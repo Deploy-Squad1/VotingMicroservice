@@ -143,3 +143,51 @@ func (s *Storage) ExecuteUpgrade(targetUserID int) error {
 	_, err := s.db.Exec(`UPDATE app_user_groups SET group_id = group_id + 1 WHERE user_id = $1`, targetUserID)
 	return err
 }
+
+func (s *Storage) GetActivePolls() ([]models.Poll, error) {
+	query := `
+		SELECT 
+			p.id, 
+			p.poll_type, 
+			p.target_user_id, 
+			p.initiator_id, 
+			p.status, 
+			p.created_at, 
+			p.expires_at,
+			COALESCE(SUM(CASE WHEN pv.vote = true THEN 1 ELSE 0 END), 0) AS votes_for,
+			COALESCE(SUM(CASE WHEN pv.vote = false THEN 1 ELSE 0 END), 0) AS votes_against
+		FROM polls p
+		LEFT JOIN polls_votes pv ON p.id = pv.poll_id
+		WHERE p.status = 'active' AND p.expires_at > NOW()
+		GROUP BY p.id
+		ORDER BY p.created_at DESC
+	`
+
+	rows, err := s.db.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var polls []models.Poll
+	for rows.Next() {
+		var p models.Poll
+		if err := rows.Scan(
+			&p.ID, &p.PollType, &p.TargetUserID, &p.InitiatorID, &p.Status, &p.CreatedAt, &p.ExpiresAt,
+			&p.VotesFor, &p.VotesAgainst,
+		); err != nil {
+			return nil, err
+		}
+		polls = append(polls, p)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
+	if polls == nil {
+		polls = []models.Poll{}
+	}
+
+	return polls, nil
+}

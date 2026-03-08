@@ -40,9 +40,9 @@ JWT_SECRET=your_jwt_secret
 
 Migrations are executed automatically on startup by `runMigrations(...)` in `cmd/api/main.go`.
 
-```powershell
+```
 go mod tidy
-go run ./cmd/api
+go run ./cmd/api/main.go
 ```
 
 Default server address:
@@ -99,3 +99,18 @@ If your scheduler runs in Docker, it should call the API using the **container s
   - Applies effect:
     - `kick`: deletes user-related records via `ExecuteKick`
     - `upgrade`: increments `group_id` via `ExecuteUpgrade`
+
+### 5) Get Active Polls
+
+- **Method/Path:** `GET /api/polls/active`
+- **Auth:** required (`access_token` cookie), any authenticated role
+- **Behavior:**
+  - Returns list of active polls with details (type, target user, time remaining, etc.)
+  - Useful for frontend display of ongoing polls
+
+### 6) Database Delete
+
+- **Method/Path:** `DELETE /api/internal/database/delete`
+- **Auth:** requires authentication of special user `access_token` coockie
+- **Behavior:**
+- Deletes all records from `polls` and `polls_votes` tables
