@@ -144,7 +144,7 @@ func (s *Storage) ExecuteUpgrade(targetUserID int) error {
 	return err
 }
 
-func (s *Storage) GetActivePolls() ([]models.Poll, error) {
+func (s *Storage) GetActivePolls(currentUserID int) ([]models.Poll, error) {
 	query := `
 		SELECT 
 			p.id, 
@@ -155,15 +155,20 @@ func (s *Storage) GetActivePolls() ([]models.Poll, error) {
 			p.created_at, 
 			p.expires_at,
 			COALESCE(SUM(CASE WHEN pv.vote = true THEN 1 ELSE 0 END), 0) AS votes_for,
-			COALESCE(SUM(CASE WHEN pv.vote = false THEN 1 ELSE 0 END), 0) AS votes_against
+			COALESCE(SUM(CASE WHEN pv.vote = false THEN 1 ELSE 0 END), 0) AS votes_against,
+			tu.username AS target_username,
+			iu.username AS initiator_username,
+			(SELECT vote FROM polls_votes WHERE poll_id = p.id AND voter_id = $1) AS user_vote
 		FROM polls p
 		LEFT JOIN polls_votes pv ON p.id = pv.poll_id
+		LEFT JOIN app_user tu ON p.target_user_id = tu.id
+		LEFT JOIN app_user iu ON p.initiator_id = iu.id
 		WHERE p.status = 'active' AND p.expires_at > NOW()
-		GROUP BY p.id
+		GROUP BY p.id, tu.username, iu.username
 		ORDER BY p.created_at DESC
 	`
 
-	rows, err := s.db.Query(query)
+	rows, err := s.db.Query(query, currentUserID)
 	if err != nil {
 		return nil, err
 	}
@@ -172,12 +177,22 @@ func (s *Storage) GetActivePolls() ([]models.Poll, error) {
 	var polls []models.Poll
 	for rows.Next() {
 		var p models.Poll
+		var userVote sql.NullBool
+
 		if err := rows.Scan(
 			&p.ID, &p.PollType, &p.TargetUserID, &p.InitiatorID, &p.Status, &p.CreatedAt, &p.ExpiresAt,
 			&p.VotesFor, &p.VotesAgainst,
+			&p.TargetUsername, &p.InitiatorUsername,
+			&userVote,
 		); err != nil {
 			return nil, err
 		}
+
+		if userVote.Valid {
+			vote := userVote.Bool
+			p.UserVote = &vote
+		}
+
 		polls = append(polls, p)
 	}
 

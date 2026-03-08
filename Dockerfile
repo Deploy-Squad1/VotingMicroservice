@@ -14,6 +14,6 @@ WORKDIR /app
 COPY --from=builder /app/voting-service .
 COPY --from=builder /app/migrations ./migrations
 
-EXPOSE 8080
+EXPOSE 8085
 
 ENTRYPOINT ["./voting-service"]

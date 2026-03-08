@@ -34,30 +34,25 @@ func NewDatabaseMigrationHandler(store *storage.Storage) *DatabaseMigrationHandl
 
 func (h *PollHandler) CreateUpgradePoll(w http.ResponseWriter, r *http.Request) {
 	userIDContext := r.Context().Value(middlewares.UserIDKey)
+	roleContext := r.Context().Value(middlewares.RoleKey)
 	if userIDContext == nil {
 		log.Println("User ID context is missing")
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 	userID := userIDContext.(int)
+	userRole := roleContext.(string)
 
-	currentGroup, err := h.store.GetUserGroup(userID)
-	if err != nil {
-		log.Println("Error getting user group: %s", err)
-		http.Error(w, "User role not found", http.StatusNotFound)
-		return
-	}
-
-	if currentGroup >= 3 {
+	if userRole == "Gold" {
 		log.Println("User role is Gold, cannot upgrade further")
 		http.Error(w, "You are already at the highest rank (Gold) and cannot upgrade further", http.StatusBadRequest)
 		return
 	}
 
 	var requiredDuration time.Duration
-	if currentGroup == 1 {
+	if userRole == "Bronze" {
 		requiredDuration = 24 * time.Hour
-	} else if currentGroup == 2 {
+	} else if userRole == "Silver" {
 		requiredDuration = 3 * 24 * time.Hour
 	}
 
@@ -231,7 +226,15 @@ func (h *PollHandler) ProcessExpiredPolls(w http.ResponseWriter, r *http.Request
 }
 
 func (h *PollHandler) GetAllActivePolls(w http.ResponseWriter, r *http.Request) {
-	polls, err := h.store.GetActivePolls()
+	userIDContext := r.Context().Value(middlewares.UserIDKey)
+	if userIDContext == nil {
+		log.Println("User ID context not found")
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+	currentUserID := userIDContext.(int)
+
+	polls, err := h.store.GetActivePolls(currentUserID)
 	if err != nil {
 		log.Printf("DB Error fetching active polls: %v\n", err)
 		http.Error(w, "Failed to fetch polls", http.StatusInternalServerError)
