@@ -1,0 +1,16 @@
+CREATE TABLE IF NOT EXISTS polls(
+    id SERIAL PRIMARY KEY,
+    poll_type VARCHAR(50) NOT NULL,
+    target_user_id BIGINT NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
+    initiator_id BIGINT NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
+    status VARCHAR(50) DEFAULT 'active',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL
+);
+CREATE TABLE IF NOT EXISTS polls_votes(
+    id SERIAL PRIMARY KEY,
+    poll_id INT NOT NULL REFERENCES polls(id) ON DELETE CASCADE,
+    voter_id BIGINT NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
+    vote BOOLEAN NOT NULL,
+    UNIQUE(poll_id, voter_id)
+);
